@@ -1,0 +1,171 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>お店ごっこレジ（iOS対応版）</title>
+<style>
+body{font-family:-apple-system,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;background:#f4f5f7;margin:0;padding:0}
+.container{max-width:960px;margin:20px auto;display:grid;grid-template-columns:1fr 320px;gap:20px}
+@media(max-width:800px){.container{grid-template-columns:1fr}}
+.receipt,.panel{background:#fff;border-radius:8px;box-shadow:0 4px 8px rgba(0,0,0,0.1);padding:20px}
+h2{margin-top:0}
+table{width:100%;border-collapse:collapse}
+th,td{padding:6px 4px;border-bottom:1px solid #eee;font-size:14px}
+td.right{text-align:right}
+.btn{background:#4CAF50;color:#fff;border:none;border-radius:6px;padding:8px 14px;cursor:pointer}
+.btn:hover{background:#388E3C}
+.btn-secondary{background:#ddd;color:#333}
+.btn-secondary:hover{background:#ccc}
+.btn-del{border:none;background:none;color:#e74c3c;font-size:18px;cursor:pointer}
+.total{font-size:22px;font-weight:bold}
+.keypad{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:10px}
+.key{background:#f7f7f7;border:1px solid #ccc;border-radius:8px;padding:14px 0;text-align:center;font-size:18px;cursor:pointer}
+.key:hover{background:#eee}
+.key.action{background:#4CAF50;color:#fff}
+.key.clear{background:#ffefc0}
+</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+  <section class="receipt">
+    <h2>お会計</h2>
+    <table>
+      <thead>
+        <tr><th>商品名</th><th class="right">数量</th><th class="right">単価</th><th class="right">小計</th><th></th></tr>
+      </thead>
+      <tbody id="itemsBody"></tbody>
+    </table>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+      <div>
+        <div>合計</div>
+        <div class="total" id="totalAmount">¥0</div>
+      </div>
+      <div>
+        <div>件数: <span id="countItems">0</span></div>
+        <button class="btn-secondary" id="clearBtn">全消</button>
+        <button class="btn" id="checkoutBtn">精算</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="panel">
+    <label>商品名</label>
+    <input id="productName" type="text" style="width:100%;padding:8px;margin-bottom:6px">
+    <label>単価 (¥)</label>
+    <input id="priceInput" type="number" style="width:100%;padding:8px;margin-bottom:6px">
+    <label>数量</label>
+    <input id="qtyInput" type="number" value="1" style="width:100%;padding:8px;margin-bottom:6px">
+    <button class="btn" id="addBtn" style="width:100%">追加</button>
+    <div class="keypad">
+      <div class="key">7</div><div class="key">8</div><div class="key">9</div>
+      <div class="key">4</div><div class="key">5</div><div class="key">6</div>
+      <div class="key">1</div><div class="key">2</div><div class="key">3</div>
+      <div class="key clear">C</div><div class="key">0</div><div class="key action">Enter</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+const { jsPDF } = window.jspdf;
+let items = [];
+let lastNumericTarget = document.getElementById('priceInput');
+
+function renderItems() {
+  const body = document.getElementById('itemsBody');
+  body.innerHTML = '';
+  items.forEach((it, i) => {
+    const tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td>' + it.name + '</td>' +
+      '<td class="right">' + it.qty + '</td>' +
+      '<td class="right">¥' + it.price.toLocaleString() + '</td>' +
+      '<td class="right">¥' + (it.price * it.qty).toLocaleString() + '</td>' +
+      '<td><button class="btn-del" onclick="removeItem(' + i + ')">×</button></td>';
+    body.appendChild(tr);
+  });
+  const total = items.reduce((a,b)=>a+b.price*b.qty,0);
+  document.getElementById('totalAmount').textContent = '¥' + total.toLocaleString();
+  document.getElementById('countItems').textContent = items.length;
+}
+
+function removeItem(i){ items.splice(i,1); renderItems(); }
+function clearItems(){ items=[]; renderItems(); }
+
+document.getElementById('addBtn').onclick=()=>{
+  const name=document.getElementById('productName').value.trim();
+  const price=parseInt(document.getElementById('priceInput').value);
+  const qty=parseInt(document.getElementById('qtyInput').value);
+  if(!name||isNaN(price)||isNaN(qty)){alert('商品名・単価・数量を入力');return;}
+  items.push({name,price,qty});
+  renderItems();
+  document.getElementById('productName').value='';
+  document.getElementById('priceInput').value='';
+  document.getElementById('qtyInput').value=1;
+};
+
+document.getElementById('clearBtn').onclick=clearItems;
+
+document.querySelectorAll('.key').forEach(k=>{
+  k.addEventListener('click',()=>{
+    const t = k.textContent;
+    if(t==='C'){lastNumericTarget.value='';return;}
+    if(t==='Enter'){document.getElementById('addBtn').click();return;}
+    lastNumericTarget.value += t;
+  });
+});
+
+['priceInput','qtyInput'].forEach(id=>{
+  document.getElementById(id).addEventListener('focus',e=>lastNumericTarget=e.target);
+});
+
+document.getElementById('checkoutBtn').onclick=()=>{
+  if(items.length===0){alert('商品がありません');return;}
+  const total=items.reduce((a,b)=>a+b.price*b.qty,0);
+  const paid=prompt(`合計 ¥。\nお預かり金額を入力：`);
+  const paidNum=parseInt(paid);
+  if(isNaN(paidNum))return;
+  const change=paidNum-total;
+  if(change<0){alert(`不足 ¥${(-change).toLocaleString()}`);return;}
+  alert(`おつり：¥\nありがとうございました！`);
+  generateReceiptPDF(items,total,paidNum,change);
+  clearItems();
+};
+
+// ---- PDF ----
+function generateReceiptPDF(items,total,paid,change){
+  const doc = new jsPDF();
+  doc.setFont("helvetica",""); // iOSでも化けない英数字フォント使用
+  let y=20;
+  doc.setFontSize(16);
+  doc.text("お店ごっこレジ",105,y,{align:"center"});
+  y+=8;
+  doc.setFontSize(10);
+  doc.text(new Date().toLocaleString("ja-JP"),105,y,{align:"center"});
+  y+=8;
+  doc.line(20,y,190,y);
+  y+=6;
+  doc.setFontSize(12);
+  items.forEach((it,i)=>{
+    doc.text(it.name,22,y);
+    doc.text(it.qty.toString(),120,y);
+    doc.text("¥"+it.price.toLocaleString(),150,y);
+    doc.text("¥"+(it.price*it.qty).toLocaleString(),185,y,{align:"right"});
+    y+=6;
+  });
+  y+=4;
+  doc.line(20,y,190,y);
+  y+=8;
+  doc.setFontSize(13);
+  doc.text(`合計: ¥`,180,y,{align:"right"}); y+=6;
+  doc.text(`お預かり: ¥`,180,y,{align:"right"}); y+=6;
+  doc.text(`おつり: ¥`,180,y,{align:"right"}); y+=10;
+  doc.setFontSize(12);
+  doc.text("ありがとうございました！",105,y,{align:"center"});
+  doc.save("receipt.pdf");
+}
+</script>
+</body>
+</html>
