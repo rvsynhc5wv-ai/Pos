@@ -1,0 +1,365 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>お店ごっこレジ</title>
+<style>
+:root {
+  --accent: #4CAF50;
+  --accent-dark: #388E3C;
+  --bg: #f5f6fa;
+  --panel: #fff;
+  --shadow: 0 4px 14px rgba(0,0,0,0.08);
+  font-family: "Segoe UI", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, sans-serif;
+}
+body {
+  margin: 0;
+  background: var(--bg);
+}
+.container {
+  max-width: 1100px;
+  margin: 20px auto;
+  display: grid;
+  grid-template-columns: 1fr 360px;
+  gap: 20px;
+  padding: 10px;
+}
+@media (max-width: 800px) {
+  .container { grid-template-columns: 1fr; }
+}
+
+/* 左：レシート */
+.receipt {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+  display: flex;
+  flex-direction: column;
+  min-height: 400px;
+}
+.receipt h2 {
+  margin-top: 0;
+  border-bottom: 2px solid #eee;
+  padding-bottom: 6px;
+}
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+th, td {
+  padding: 8px 5px;
+  border-bottom: 1px dashed #eee;
+  font-size: 14px;
+}
+th {
+  color: #666;
+}
+td.right { text-align: right; }
+.btn-del {
+  border: none;
+  background: none;
+  color: #e74c3c;
+  font-size: 18px;
+  cursor: pointer;
+}
+.item-add {
+  animation: fadeIn 0.3s ease;
+}
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(-5px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* 合計 */
+.summary {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 2px solid #eee;
+}
+.total {
+  font-size: 22px;
+  font-weight: bold;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+}
+button {
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+.btn {
+  background: var(--accent);
+  color: #fff;
+  padding: 10px 14px;
+  box-shadow: var(--shadow);
+}
+.btn:hover { background: var(--accent-dark); }
+.btn-secondary {
+  background: #ddd;
+  color: #333;
+}
+.btn-secondary:hover { background: #ccc; }
+
+/* 右：入力パネル */
+.panel {
+  background: var(--panel);
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: var(--shadow);
+}
+label {
+  font-size: 13px;
+  color: #555;
+  display: block;
+  margin-bottom: 4px;
+}
+input[type=text],
+input[type=number] {
+  width: 100%;
+  padding: 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 16px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+}
+.keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin-top: 10px;
+}
+.key {
+  background: #fafafa;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 14px 0;
+  text-align: center;
+  font-size: 18px;
+  cursor: pointer;
+  user-select: none;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+}
+.key:hover { background: #f0f0f0; }
+.key.action { background: var(--accent); color: #fff; font-weight: bold; }
+.key.clear { background: #ffefc0; }
+</style>
+
+<!-- jsPDF ライブラリ -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+</head>
+<body>
+
+<div class="container">
+  <!-- 左側：購入リスト -->
+  <section class="receipt">
+    <h2>お会計</h2>
+    <table>
+      <thead>
+        <tr><th>商品名</th><th class="right">数量</th><th class="right">単価</th><th class="right">小計</th><th></th></tr>
+      </thead>
+      <tbody id="itemsBody"></tbody>
+    </table>
+    <div class="summary">
+      <div>
+        <div>合計</div>
+        <div class="total" id="totalAmount">¥0</div>
+      </div>
+      <div>
+        <div>件数: <span id="countItems">0</span></div>
+        <div class="actions">
+          <button class="btn-secondary" id="clearBtn">全て消す</button>
+          <button class="btn" id="checkoutBtn">精算</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 右側：入力パネル -->
+  <aside class="panel">
+    <label>商品名</label>
+    <input id="productName" type="text" placeholder="例: りんご">
+
+    <label>単価 (¥)</label>
+    <input id="priceInput" type="number" inputmode="numeric" placeholder="0">
+
+    <label>数量</label>
+    <input id="qtyInput" type="number" inputmode="numeric" value="1">
+
+    <button class="btn" id="addBtn" style="width:100%;margin-top:5px;">追加</button>
+
+    <div class="keypad">
+      <div class="key">7</div><div class="key">8</div><div class="key">9</div>
+      <div class="key">4</div><div class="key">5</div><div class="key">6</div>
+      <div class="key">1</div><div class="key">2</div><div class="key">3</div>
+      <div class="key clear">C</div><div class="key">0</div><div class="key action">Enter</div>
+    </div>
+  </aside>
+</div>
+
+<script>
+const productName = document.getElementById('productName');
+const priceInput = document.getElementById('priceInput');
+const qtyInput = document.getElementById('qtyInput');
+const addBtn = document.getElementById('addBtn');
+const itemsBody = document.getElementById('itemsBody');
+const totalAmount = document.getElementById('totalAmount');
+const countItems = document.getElementById('countItems');
+const clearBtn = document.getElementById('clearBtn');
+const checkoutBtn = document.getElementById('checkoutBtn');
+
+let items = [];
+let lastNumericTarget = priceInput;
+
+// テンキー入力
+[priceInput, qtyInput].forEach(el => {
+  el.addEventListener('focus', () => lastNumericTarget = el);
+});
+
+document.querySelectorAll('.key').forEach(key => {
+  key.addEventListener('click', () => {
+    const val = key.textContent.trim();
+    if (val === 'C') { lastNumericTarget.value = ''; return; }
+    if (val === 'Enter') { addItem(); return; }
+    if (/^\d$/.test(val)) { lastNumericTarget.value += val; return; }
+  });
+});
+
+function addItem(){
+  const name = productName.value.trim() || '商品名なし';
+  const priceStr = priceInput.value.trim();
+  const qtyStr = qtyInput.value.trim();
+
+  const price = priceStr === '' ? 0 : parseFloat(priceStr);
+  const qty = qtyStr === '' ? 1 : parseFloat(qtyStr);
+
+  if (isNaN(price) || isNaN(qty)) return alert('数値を正しく入力してください');
+
+  const subtotal = Math.round(price * qty * 100)/100;
+  const item = { id: Date.now().toString(36), name, price, qty, subtotal };
+  items.push(item);
+  renderItems();
+
+  productName.value = '';
+  priceInput.value = '';
+  qtyInput.value = '1';
+  productName.focus();
+}
+
+function renderItems(){
+  itemsBody.innerHTML = '';
+  let total = 0;
+  items.forEach(item => {
+    total += item.subtotal;
+    const tr = document.createElement('tr');
+    tr.classList.add('item-add');
+    tr.innerHTML = `
+      <td></td>
+      <td class="right"></td>
+      <td class="right">¥</td>
+      <td class="right">¥</td>
+      <td class="right"><button class="btn-del" data-id="">×</button></td>`;
+    itemsBody.appendChild(tr);
+  });
+
+  itemsBody.querySelectorAll('.btn-del').forEach(btn=>{
+    btn.addEventListener('click',()=>removeItem(btn.dataset.id));
+  });
+
+  totalAmount.textContent = "¥" + total.toLocaleString();
+  countItems.textContent = items.length;
+}
+
+function removeItem(id){
+  items = items.filter(it => it.id !== id);
+  renderItems();
+}
+
+clearBtn.addEventListener('click',()=>{
+  if(confirm('全て削除しますか？')){
+    items = [];
+    renderItems();
+  }
+});
+
+// ✅ PDFレシート生成関数
+async function generateReceiptPDF(items, total, paid, change) {
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF();
+
+  let y = 20;
+  doc.setFontSize(16);
+  doc.text("お店ごっこレジ", 105, y, { align: "center" });
+  y += 10;
+
+  doc.setFontSize(12);
+  doc.text(new Date().toLocaleString("ja-JP"), 105, y, { align: "center" });
+  y += 10;
+
+  doc.setLineWidth(0.3);
+  doc.line(20, y, 190, y);
+  y += 8;
+
+  doc.setFontSize(11);
+  items.forEach((item, i) => {
+    doc.text(`. `, 22, y);
+    doc.text(` × ¥`, 140, y);
+    doc.text(`¥`, 180, y, { align: "right" });
+    y += 7;
+  });
+
+  y += 5;
+  doc.line(20, y, 190, y);
+  y += 8;
+
+  doc.setFontSize(12);
+  doc.text(`合計: ¥`, 180, y, { align: "right" });
+  y += 7;
+  doc.text(`お預かり: ¥`, 180, y, { align: "right" });
+  y += 7;
+  doc.text(`おつり: ¥`, 180, y, { align: "right" });
+
+  y += 15;
+  doc.setFontSize(11);
+  doc.text("ありがとうございました！", 105, y, { align: "center" });
+
+  doc.save(`receipt_.pdf`);
+}
+
+checkoutBtn.addEventListener('click',()=>{
+  if(items.length===0){alert('商品がありません');return;}
+  const total = items.reduce((a,b)=>a+b.subtotal,0);
+  const paid = prompt(`合計は ¥ です。\nお預かり金額を入力してください。`);
+  const paidNum = parseFloat(paid);
+  if(isNaN(paidNum)) return alert('数値を入力してください');
+  const change = Math.round((paidNum - total)*100)/100;
+  if(change < 0) {
+    alert(`不足しています：¥${(-change).toLocaleString()}`);
+  } else {
+    alert(`おつり：¥\nありがとうございました！`);
+    generateReceiptPDF(items, total, paidNum, change); // PDF生成呼び出し
+    items = [];
+    renderItems();
+  }
+});
+
+function escapeHtml(str){
+  return str.replace(/[&<>"']/g, s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[s]));
+}
+
+[productName,priceInput,qtyInput].forEach(inp=>{
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter') addItem(); });
+});
+
+renderItems();
+</script>
+
+</body>
+</html>
